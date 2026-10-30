@@ -158,7 +158,19 @@ const SPECIAL_ITEMS = [
 ];
 const ADD_MENU_ITEM = {key:"addmenu", type:"addmenu", lo:"ເພີ່ມເມນູ", en:"Suggest new item", img:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0ODAgNDgwIj4KPHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSI0ODAiIHJ4PSIzMCIgZmlsbD0iI2VlZjdlZSIvPgo8Y2lyY2xlIGN4PSIyNDAiIGN5PSIyMDAiIHI9Ijc1IiBmaWxsPSIjZmZmZmZmIiBzdHJva2U9IiMzYmE1NWQiIHN0cm9rZS13aWR0aD0iNiIvPgo8bGluZSB4MT0iMjQwIiB5MT0iMTYwIiB4Mj0iMjQwIiB5Mj0iMjQwIiBzdHJva2U9IiMzYmE1NWQiIHN0cm9rZS13aWR0aD0iMTQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8bGluZSB4MT0iMjAwIiB5MT0iMjAwIiB4Mj0iMjgwIiB5Mj0iMjAwIiBzdHJva2U9IiMzYmE1NWQiIHN0cm9rZS13aWR0aD0iMTQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4='};
 
-let db = null;
+// ====== ตั้งค่า: ใส่ URL ของ Google Apps Script (Web app) ตรงนี้ ======
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbySQU8tJhNApCSEE_zVRCGDcDiQHJDSGnUfJwkLHGqcPdgp3tYI5yDVqhuAdV8W8sGl/exec";
+// ===================================================================
+
+function sendToSheet(payload){
+  if(!SHEET_URL || SHEET_URL.indexOf('PASTE_')===0) return Promise.resolve(false);
+  return fetch(SHEET_URL, {
+    method:'POST',
+    mode:'no-cors',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(payload)
+  }).then(()=>true).catch(()=>false);
+}
 let selected = new Map(); // id -> {lo, img?, emoji?}
 
 const foodGrid = document.getElementById('foodGrid');
@@ -214,7 +226,7 @@ function renderTile(item, type){
     t.onclick = ()=>{
       const val = prompt('ພໍ່ຢາກໃຫ້ເພີ່ມເມນູຫຍັງ?');
       if(val && val.trim()){
-        if(db){ try{ db.doc('suggestions/'+Date.now()).set({text:val.trim(), time:Date.now()}); }catch(e){} }
+        sendToSheet({type:'suggestion', text:val.trim(), time:Date.now()});
         alert('ຂອບໃຈ! ຈະເພີ່ມເມນູນີ້ໃຫ້ໄວໆນີ້ 🙏');
       }
     };
@@ -280,7 +292,13 @@ document.getElementById('sendBtn').onclick = async ()=>{
   const items = Array.from(selected.values());
   const note = document.getElementById('noteInput').value.trim();
   const order = {items, note, time: Date.now()};
-  if(db){ try{ await db.doc('order/current').set(order); }catch(e){} }
+  const ok = await sendToSheet({
+    type:'order',
+    time: order.time,
+    items: items.map(i=>i.lo),
+    note: note
+  });
+  try{ localStorage.setItem('lastOrder', JSON.stringify(order)); }catch(e){}
   showLastSent(order);
   selected.clear();
   document.getElementById('noteInput').value='';
@@ -328,24 +346,9 @@ async function init(){
   renderDate();
   renderGrids();
   renderCart();
-  try{ db = await claude.use('db'); }catch(e){ db = null; }
-  if(db){
-    try{
-      db.doc('order/current').onSnapshot(snap=>{
-        const data = snap && snap.data ? snap.data() : null;
-        if(data && data.items){ showLastSent(data); }
-      });
-    }catch(e){}
-  }
   try{
-    const comments = await claude.use('comments');
-    if(comments){
-      const btn = document.getElementById('commentBtn');
-      btn.style.display = 'inline-block';
-      btn.onclick = ()=>{
-        comments.openComposer({element: document.getElementById('appHeader')});
-      };
-    }
+    const saved = JSON.parse(localStorage.getItem('lastOrder')||'null');
+    if(saved && saved.items){ showLastSent(saved); }
   }catch(e){}
 }
 init();
